@@ -1,0 +1,66 @@
+{
+    "name": "openvpn-access-server-infra",
+    "description": "AWS Infrastructure is code for a self hosted and scalable OpenVPN Access Server in AWS",
+    "license": "ISC",
+    "version": "0.0.22",
+    "author": {
+        "email": "bleushade@gmail.com",
+        "name": "Julian Pereira",
+        "url": "https://www.julian-pereira.com"
+    },
+    "keywords": [
+        "openvpn",
+        "pihole",
+        "unbound",
+        "certbot",
+        "letsencrypt",
+        "typescript",
+        "CDK",
+        "AWS"
+    ],
+    "bin": {
+        "openvpn-access-server-infra": "bin/openvpn-access-server-infra.js"
+    },
+    "scripts": {
+        "build": "rimraf dist && webpack",
+        "watch": "tsc -w",
+        "test": "jest --env=node",
+        "test:watch": "jest --env=node --watch",
+        "prettier:format": "prettier --config .prettierrc.js --write src/**/**.ts lib/**/*.ts bin/**/*.ts",
+        "prettier:check": "prettier --config .prettierrc.js --list-different src/**/**.ts lib/**/*.ts bin/**/*.ts",
+        "cdk": "cdk",
+        "cdk:deploy": "npm run test && npm run update-version && rimraf cdk.out && npm run build && cdk-deploy.bat",
+        "cdk:destroy": "cdk-destroy.bat",
+        "update-version": "node ./scripts/npm-update-version.js"
+    },
+    "devDependencies": {
+        "@aws-cdk/assert": "1.95.1",
+        "@aws-cdk/aws-autoscaling": "1.95.1",
+        "@aws-cdk/aws-ec2": "1.95.1",
+        "@aws-cdk/aws-events-targets": "1.95.1",
+        "@aws-cdk/aws-lambda-event-sources": "1.95.1",
+        "@aws-cdk/aws-route53": "1.95.1",
+        "@aws-cdk/aws-sns": "1.95.1",
+        "@types/aws-lambda": "^8.10.73",
+        "@types/jest": "^26.0.10",
+        "@types/node": "10.17.27",
+        "aws-cdk": "1.95.1",
+        "aws-sdk": "^2.874.0",
+        "aws-sdk-mock": "^5.1.0",
+        "child-process-promise": "^2.2.1",
+        "cross-env": "^7.0.3",
+        "jest": "^26.4.2",
+        "prettier": "^2.2.1",
+        "rimraf": "^3.0.2",
+        "ts-jest": "^26.2.0",
+        "ts-loader": "^8.1.0",
+        "ts-node": "^9.0.0",
+        "typescript": "~3.9.7",
+        "webpack": "^5.28.0",
+        "webpack-cli": "^4.6.0"
+    },
+    "dependencies": {
+        "@aws-cdk/core": "1.95.1",
+        "source-map-support": "^0.5.16"
+    }
+}

@@ -1,0 +1,17 @@
+*.ts
+!*.d.ts
+
+# artifacts
+dist
+test
+coverage
+
+# tooling
+scripts
+
+# CDK asset staging directory
+.cdk.staging
+cdk.out
+cdk.context.json
+cdk-deploy*
+cdk-destroy*

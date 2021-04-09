@@ -1,0 +1,16 @@
+*.js
+!webpack.config.js
+!.prettierrc.js
+!jest.config.js
+*.d.ts
+node_modules
+
+# CDK asset staging directory
+.cdk.staging
+cdk.out
+cdk.context.json
+cdk-context.json
+
+dist
+cdk-deploy-to.ps1
+cdk-destroy-to.ps1

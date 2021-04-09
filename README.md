@@ -159,8 +159,20 @@ Try not to immediately use the OpenVPN Access Server after infrastructure deploy
       sudo /usr/local/openvpn_as/scripts/sacli ConfigQuery
       ```
 3. Tail the setup log via `tail -f -n 100 /var/log/cloud-init-output.log` or `cat` the same file to see everything.
+4. If you need to manually reset the VPN client's password, `ssh` into the OpenVPN EC2 instance then run:
+   ```bash
+   sudo /usr/local/openvpn_as/scripts/sacli --user <vpnUser> --new_pass "<vpnUserPassword>" SetLocalPassword
+   ```
+5. In the event your VPN clients are locked out, you can expedite the cooldown time by `ssh`ing into the OpenVPN EC2 instance and running the following:
+   ```bash
+   sudo /usr/local/openvpn_as/scripts/sacli stop
+   sudo /usr/local/openvpn_as/scripts/sacli --key "vpn.server.lockout_policy.reset_time" --value "1" ConfigPut
+   sudo /usr/local/openvpn_as/scripts/sacli start
 
-
+   sudo /usr/local/openvpn_as/scripts/sacli stop
+   sudo /usr/local/openvpn_as/scripts/sacli --key "vpn.server.lockout_policy.reset_time" ConfigDel
+   sudo /usr/local/openvpn_as/scripts/sacli start
+   ```
 ## Known Issues
 
 ### TCP vs UDP 

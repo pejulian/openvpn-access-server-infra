@@ -263,9 +263,7 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
         // https://stackoverflow.com/questions/54415841/nodejs-not-installed-successfully-in-aws-ec2-inside-user-data
         this.piHoleInstance.userData.addCommands(
             ...OpenVpnAccessServerInfraStack.NVM_INSTALL_COMMANDS,
-            `npx openvpn-access-server-scripts@${userDataScriptsVersionTag} setup-pihole -p "${this.escapeRegExp(
-                piHoleWebPassword
-            )}" -r "${region}"`
+            `npx openvpn-access-server-scripts@${userDataScriptsVersionTag} setup-pihole -p \"'${piHoleWebPassword}'\" -r "${region}"`
         );
 
         this.piHoleInstance.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
@@ -394,14 +392,8 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
         // https://stackoverflow.com/questions/54415841/nodejs-not-installed-successfully-in-aws-ec2-inside-user-data
         openVpnUserData.addCommands(
             ...OpenVpnAccessServerInfraStack.NVM_INSTALL_COMMANDS,
-            `echo "openvpn:${adminPassword}" | chpasswd`,
-            `npx openvpn-access-server-scripts@${userDataScriptsVersionTag} setup-openvpn -d "${region}.vpn.${zoneName}" -e "${certEmail}" -b "${
-                this.openVpnCertBucket.bucketName
-            }" -r "${region}" -i "${
-                this.piHoleInstance.instancePrivateIp
-            }" -u "${vpnUsername}" -p "${this.escapeRegExp(
-                vpnPassword
-            )}" -c "${letsEncryptCertEnv}"`
+            `echo "openvpn:${this.escapeRegExp(adminPassword)}" | chpasswd`,
+            `npx openvpn-access-server-scripts@${userDataScriptsVersionTag} setup-openvpn -d "${region}.vpn.${zoneName}" -e "${certEmail}" -b "${this.openVpnCertBucket.bucketName}" -r "${region}" -i "${this.piHoleInstance.instancePrivateIp}" -u "${vpnUsername}" -p "\'${vpnPassword}'\" -c "${letsEncryptCertEnv}"`
         );
 
         this.openVpnAsgTopic = new sns.Topic(this, `${id}-asg-topic-openvpn`, {

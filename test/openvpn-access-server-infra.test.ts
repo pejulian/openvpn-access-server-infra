@@ -25,8 +25,8 @@ import * as ec2 from '@aws-cdk/aws-ec2';
 import * as events from '@aws-cdk/aws-events';
 import * as iam from '@aws-cdk/aws-iam';
 import * as ssm from '@aws-cdk/aws-ssm';
-import * as s3_assets from '@aws-cdk/aws-s3-assets';
 import * as autoscaling from '@aws-cdk/aws-autoscaling';
+import * as dynamodb from '@aws-cdk/aws-dynamodb';
 
 jest.mock('@aws-cdk/aws-lambda', () => {
     const actualLambda: typeof lambda = jest.requireActual(
@@ -430,6 +430,21 @@ describe('OpenVpnAccessServerInfraStack', () => {
         expect(subnetLogicalIds).toContain(ec2Subnet.capturedValue);
     });
 
+    it('should create an Elastic IP for the OpenVPN EC2 instances', () => {
+        const output = new OpenVpnAccessServerInfraStack(
+            stack,
+            stackId,
+            stackProps
+        );
+
+        const elasticIpLogicalId = output.getLogicalId(output.openVpnElasticIp);
+        expect(elasticIpLogicalId).not.toBeUndefined();
+
+        expect(output).toHaveResource('AWS::EC2::EIP', {
+            Domain: 'vpc',
+        });
+    });
+
     it('should create an Elastic IP for the PiHole EC2 instance', () => {
         const output = new OpenVpnAccessServerInfraStack(
             stack,
@@ -443,7 +458,7 @@ describe('OpenVpnAccessServerInfraStack', () => {
 
         const elasticIpLogicalId = output.getLogicalId(output.piHoleElasticIp);
 
-        expect(output).toCountResources('AWS::EC2::EIP', 1);
+        expect(output).toCountResources('AWS::EC2::EIP', 2);
 
         expect(output).toHaveResource('AWS::EC2::EIP', {
             Domain: 'vpc',
@@ -689,7 +704,7 @@ describe('OpenVpnAccessServerInfraStack', () => {
         });
     });
 
-    it('should creata a policy that allows the ProcessEvent lambda function to run operations on EC2 and Route53', () => {
+    it('should creata a policy that allows the ProcessEvent lambda function to run operations on EC2, DynamoDb and Route53', () => {
         const output = new OpenVpnAccessServerInfraStack(
             stack,
             stackId,
@@ -701,9 +716,12 @@ describe('OpenVpnAccessServerInfraStack', () => {
                 Statement: [
                     {
                         Action: [
-                            'ec2:DescribeInstances',
-                            'ec2:ModifyInstanceAttribute',
-                            'route53:ChangeResourceRecordSets',
+                            'ec2:DescribeInstances', // Describes one or more of your instances.
+                            'ec2:ModifyInstanceAttribute', // Modifies the specified attribute of the specified instance.
+                            'ec2:DescribeAddresses', // Describes one or more of your Elastic IP addresses.
+                            'ec2:AssociateAddress', // Associates an Elastic IP address with an instance or a network interface.
+                            'ec2:DisassociateAddress', // Allow an elastic ip address to be disassociated
+                            'route53:ChangeResourceRecordSets', // Allows changes to records in a given hosted zone
                         ],
                         Effect: 'Allow',
                         Resource: '*',

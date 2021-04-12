@@ -14,11 +14,13 @@ import * as iam from '@aws-cdk/aws-iam';
 import * as logs from '@aws-cdk/aws-logs';
 import * as route53 from '@aws-cdk/aws-route53';
 import * as s3 from '@aws-cdk/aws-s3';
+import * as dynamodb from '@aws-cdk/aws-dynamodb';
 
 import { Rule, Schedule } from '@aws-cdk/aws-events';
 import { LambdaFunction } from '@aws-cdk/aws-events-targets';
 import { SnsEventSource } from '@aws-cdk/aws-lambda-event-sources';
-import { Tags } from '@aws-cdk/core';
+import { Stack, Tags } from '@aws-cdk/core';
+import { HostedZone } from '@aws-cdk/aws-route53';
 
 export interface ConfigurationParameters {
     readonly certEmail: string;
@@ -48,6 +50,7 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
     public readonly openVpnSecurityGroup: ec2.SecurityGroup;
     public readonly openVpnImage: ec2.GenericLinuxImage;
     public readonly openVpnAsg: autoscaling.AutoScalingGroup;
+    public readonly openVpnElasticIp: ec2.CfnEIP;
     public readonly openVpnAsgTopic: sns.Topic;
     public readonly processOpenVpnEventFn: lambda.Function;
     public readonly setOpenVpnAsgToZeroFn: lambda.Function;
@@ -66,7 +69,6 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
     public readonly scaleDownRule: Rule;
 
     public static NVM_INSTALL_COMMANDS = [
-        `sudo apt-get -qq update nss nss-util nspr -y`,
         `curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash`,
         `export NVM_DIR="$HOME/.nvm"`,
         `[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"`,
@@ -98,6 +100,11 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
         } = this.getParametersFromStore();
 
         const region = cdk.Stack.of(this).region;
+        const resolvedHostedZone = HostedZone.fromHostedZoneId(
+            this,
+            `${id}-resolved-hostedzone`,
+            hostedZone
+        );
 
         // Create a new VPC with 2 public subnets in up to 2 AZs
         // All private subnets will automatically have a NAT gateway assigned to its Route Table
@@ -262,6 +269,7 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
         // https://dev.to/denolfe/easily-rerun-ec2-userdata-3k18
         // https://stackoverflow.com/questions/54415841/nodejs-not-installed-successfully-in-aws-ec2-inside-user-data
         this.piHoleInstance.userData.addCommands(
+            `git config --global http.postBuffer 1048576000`,
             ...OpenVpnAccessServerInfraStack.NVM_INSTALL_COMMANDS,
             `npx openvpn-access-server-scripts@${userDataScriptsVersionTag} setup-pihole -p \"'${piHoleWebPassword}'\" -r "${region}"`
         );
@@ -359,6 +367,12 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
         // When the stack is deleted, destroy the Security Group
         this.openVpnSecurityGroup.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
 
+        // Create elastic ip for OpenVPN instance to use
+        this.openVpnElasticIp = new ec2.CfnEIP(this, `${id}-eip-openvpn`, {
+            domain: 'vpc', // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-eip.html#cfn-ec2-eip-domain
+        });
+        this.openVpnElasticIp.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
+
         // Create an S3 bucket to hold Lets Encrypt certs so that they can
         // be reused in subsequent OpenVPN EC2 instances created by the ASG
         // after the initial one that first created the cert was destroyed
@@ -393,7 +407,7 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
         openVpnUserData.addCommands(
             ...OpenVpnAccessServerInfraStack.NVM_INSTALL_COMMANDS,
             `echo "openvpn:${this.escapeRegExp(adminPassword)}" | chpasswd`,
-            `npx openvpn-access-server-scripts@${userDataScriptsVersionTag} setup-openvpn -d "${region}.vpn.${zoneName}" -e "${certEmail}" -b "${this.openVpnCertBucket.bucketName}" -r "${region}" -i "${this.piHoleInstance.instancePrivateIp}" -u "${vpnUsername}" -p "\'${vpnPassword}'\" -c "${letsEncryptCertEnv}"`
+            `npx openvpn-access-server-scripts@${userDataScriptsVersionTag} setup-openvpn -d "${region}.vpn.${zoneName}" -e "${certEmail}" -b "${this.openVpnCertBucket.bucketName}" -r "${region}" -h "${region}.vpn.${zoneName}" -i "${this.piHoleInstance.instancePrivateIp}" -u "${vpnUsername}" -p "\'${vpnPassword}'\" -c "${letsEncryptCertEnv}"`
         );
 
         this.openVpnAsgTopic = new sns.Topic(this, `${id}-asg-topic-openvpn`, {
@@ -417,11 +431,11 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
                       ),
                 machineImage: this.openVpnImage,
                 keyName: openVpnKeyName,
-                maxCapacity: 1,
-                minCapacity: 0,
+                maxCapacity: 1, // You shouldn't change this becuase changing it to other values is contrary to the objective of this ASG
+                minCapacity: 0, // You shouldn't change this becuase changing it to other values is contrary to the objective of this ASG
                 desiredCapacity: props?.desiredAsgCapacity
                     ? props.desiredAsgCapacity
-                    : 1,
+                    : 1, // You shouldn't change this becuase changing it to other values is contrary to the objective of this ASG
                 vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
                 userData: openVpnUserData,
                 notificationsTopic: this.openVpnAsgTopic,
@@ -462,6 +476,7 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
                     HOSTED_ZONE: hostedZone,
                     DNS_NAME: `${region}.vpn.${zoneName}`,
                     REGION: region,
+                    EIP_ALLOCATION_ID: this.openVpnElasticIp.attrAllocationId,
                 },
             }
         );
@@ -471,10 +486,14 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
             this.processOpenVpnEventFn.role.addToPrincipalPolicy(
                 new iam.PolicyStatement({
                     resources: ['*'],
+                    effect: iam.Effect.ALLOW,
                     actions: [
-                        'ec2:DescribeInstances',
-                        'ec2:ModifyInstanceAttribute',
-                        'route53:ChangeResourceRecordSets',
+                        'ec2:DescribeInstances', // Describes one or more of your instances.
+                        'ec2:ModifyInstanceAttribute', // Modifies the specified attribute of the specified instance.
+                        'ec2:DescribeAddresses', // Describes one or more of your Elastic IP addresses.
+                        'ec2:AssociateAddress', // Associates an Elastic IP address with an instance or a network interface.
+                        'ec2:DisassociateAddress', // Allow an elastic ip address to be disassociated
+                        'route53:ChangeResourceRecordSets', // Allows changes to records in a given hosted zone
                     ],
                 })
             );

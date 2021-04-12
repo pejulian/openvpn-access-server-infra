@@ -18,6 +18,7 @@ This repository attempts to automate as much of the setup process as possible so
     - [General reminders](#general-reminders)
     - [For the Pi Hole EC2 image](#for-the-pi-hole-ec2-image)
     - [For the OpenVPN Instance](#for-the-openvpn-instance)
+    - [Manually setting the Auto Scaling Group](#manually-setting-the-auto-scaling-group)
   - [Known Issues](#known-issues)
     - [TCP vs UDP](#tcp-vs-udp)
   - [Features](#features)
@@ -147,7 +148,7 @@ It _may not_ be immediately possible to access the Pi Hole web interface after i
        3. Reboot the EC2 instance manually in the EC2 console and then try to access the Pi Hole web interface after a minute or so.
           1. Rebooting shouldnt change your EC2 IP address but it will restart network services that failed to update
        4. Verify that you can indeed access the web interface from the public IP address and the FQDN.
-4. If you are using a password with many special characters (i.e. contains `#` and `$`), you might encounter an issue whereby the encoding of the password is incorrect causing a login error in Pi Hole. This is a bug I am still working on fixing. However, the fix for this is to `ssh` into your pihole EC2 instance and re-run `pihole -a -p <password>` to set the password manually. This should resolve the issue and allow you to log in to the Pi Hole web interface.
+1. If you want to change your Pi Hole web admin login passord, `ssh` into your pihole EC2 instance and run `pihole -a -p <password>` to set the password manually.
 
 ### For the OpenVPN Instance
 
@@ -161,7 +162,7 @@ Try not to immediately use the OpenVPN Access Server after infrastructure deploy
 3. Tail the setup log via `tail -f -n 100 /var/log/cloud-init-output.log` or `cat` the same file to see everything.
 4. If you need to manually reset the VPN client's password, `ssh` into the OpenVPN EC2 instance then run:
    ```bash
-   sudo /usr/local/openvpn_as/scripts/sacli --user <vpnUser> --new_pass "<vpnUserPassword>" SetLocalPassword
+   sudo /usr/local/openvpn_as/scripts/sacli --user <THE_USER> --new_pass "<NEW_PASSWORD>" SetLocalPassword
    ```
 5. In the event your VPN clients are locked out, you can expedite the cooldown time by `ssh`ing into the OpenVPN EC2 instance and running the following:
    ```bash
@@ -173,6 +174,53 @@ Try not to immediately use the OpenVPN Access Server after infrastructure deploy
    sudo /usr/local/openvpn_as/scripts/sacli --key "vpn.server.lockout_policy.reset_time" ConfigDel
    sudo /usr/local/openvpn_as/scripts/sacli start
    ```
+
+### Manually setting the Auto Scaling Group
+
+If you would like to manually adjust the ASG capacity without waiting for set rules to trigger, you will need to manaully trigger the:
+
+1. `OpenVpnAccessServerInfraStack-SetOpenVpnAsgToZeroFn` to set the ASG capacity to 0
+2. `OpenVpnAccessServerInfraStack-SetOpenVpnAsgToOneFn` to set the ASG capacity to 1
+
+Log in to AWS Console and go to the `Lambda` service, locate the above mentioned Lambda's and run the payloads below (in the "Test" tab) based on what setting you wish to set on the ASG.
+
+**To set capacity to 0**
+
+Sets the ASG capacity to 0 and subsequentyly
+
+```json
+{
+    "version": "0",
+    "id": "7fd27b69-08bc-e133-78c3-692e4383a2d2",
+    "detail-type": "Scheduled Event",
+    "source": "aws.events",
+    "account": "335952011029",
+    "time": "2021-04-11T14:00:00Z",
+    "region": "ap-southeast-1",
+    "resources": [
+        "arn:aws:events:ap-southeast-1:335952011029:rule/OpenVpnAccessServerInfraS-RemoveCapacityRuleDFA825-1A0NW9U7MI5YO"
+    ],
+    "detail": {}
+}
+```
+
+**To set capacity to 1**
+
+```json
+{
+    "version": "0",
+    "id": "7fd27b69-08bc-e133-78c3-692e4383a2d2",
+    "detail-type": "Scheduled Event",
+    "source": "aws.events",
+    "account": "335952011029",
+    "time": "2021-04-11T14:05:00Z",
+    "region": "ap-southeast-1",
+    "resources": [
+        "arn:aws:events:ap-southeast-1:335952011029:rule/OpenVpnAccessServerInfraS-OpenVpnAccessServerInfra-3ZG17NSXABDP"
+    ],
+    "detail": {}
+}
+```
 ## Known Issues
 
 ### TCP vs UDP 
@@ -187,12 +235,15 @@ Some applications will start freezing when OpenVPN traffic is routed via UDP. At
 
 ### The Auto Scaling Group
 
-The OpenVPN instance is configured to be scaled up or down in an Auto Scaling Group. This mechanism has been put into place to create cost savings on EC2 instance uptime by destroying the OpenVPN server everyday at 2am Malaysian Time and then recreating it again at 7.45am Malaysian time. Because Cloudwatch Scheduled events can only be defined in UTC times, the scale up and scale down times listed above are adjusted accordingly in the `cron` expression. 
+An Auto Scaling Group (ASG) has been set up for the OpenVPN EC2 instance. This ASG is not intended to be a scale out solution to the VPN server but rather a cost savings mechanism by destroying the EC2 instance at a given timeframe in a day to create cost savings. Therefore, the desired capacity of the ASG should ever only need to be either 0 (for no instances) or 1 (1 OpenVPN instance). 
+
+> The default setting of the ASG  will destroy the OpenVPN server every day at 2am Malaysian Time and then recreate it again at 7.45am Malaysian time.
+
+Because Cloudwatch Scheduled events can only be defined in UTC time, the scale up and scale down times mentioned above are adjusted to UTC accordingly in the `cron` expressions. 
 
 The current rule defined gives approximately 5 hours and 45 minutes of time in a day that you are not billed for a running OpenVPN instance.
 
 If this rule doesn't fit your needs, feel free to adjust the Cloudwatch Rules for `addCapacitySchedule` and `removeCapacitySchedule` as needed.
-
 ### unbound
 
 [unbound](https://docs.pi-hole.net/guides/dns/unbound/) is automatically set up in the PiHole EC2 instance to serve as a recursive DNS service to enhance PiHole. Most of the test validation steps you see in the `unbound` page is also integrated into the user data script of the PiHole instance. If you log in to your Pi Hole instance and go to DNS settings, you should see that a custom upstream server at `127.0.0.1#5335` has been set. This causes PiHole to forward DNS requests to `unbound` running on port 5335 instead of directly to a 3rd party DNS service. 
@@ -214,7 +265,7 @@ Personally, I would recommend adding [Firebog](https://firebog.net/)'s non-cross
 
 ## Billing Features
 
-The deployment includes 3 custom/user defined tags that can be used in AWS Cost Explorer or Billing to understand how much your setup is costing you per month.
+The deployment includes 5 custom/user defined tags that can be used in AWS Cost Explorer or Billing to understand how much your setup is costing you per month.
 
    - `OpenVpnStackId`: A unique ID identifying the stack (default is `OpenVpnAccessServerInfraStack`) 
    - `OpenVpnRegion`: The region to which the stack is deployed to

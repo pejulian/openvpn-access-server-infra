@@ -1,9 +1,10 @@
-*.ts
-!*.d.ts
+
+!lib/*
+!bin/*
+!src/*
 
 # artifacts
 dist
-test
 coverage
 
 # tooling
@@ -11,7 +12,8 @@ scripts
 
 # CDK asset staging directory
 .cdk.staging
-cdk.out
 cdk.context.json
-cdk-deploy*
-cdk-destroy*
+cdk.out
+
+# npm pack output
+openvpn-access-server-infra-*.tgz

@@ -17,7 +17,7 @@ const autoscalingClient = new AWS.AutoScaling({
 
 export async function handler(
     event: SNSEvent,
-    context: Context
+    _context: Context
 ): Promise<Record<string, unknown>> {
     console.log(`Received event: ${JSON.stringify(event, undefined, 4)}`);
 

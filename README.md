@@ -1,19 +1,26 @@
-# Self Hosted OpenVPN Access Server with Recursive DNS 
+# Self Hosted VPN with Recursive DNS 
+
+[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC) [![PR's Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat)](http://makeapullrequest.com)  
+
 
 This infrastructure _is_ code (using AWS CDK) repository provisions relevant resources needed for a scalable self hosted VPN server in AWS.
 
-The VPN server will be configured to use a recursive DNS (PiHole + Unbound) that is also set up by this code.
+An [OpenVPN](https://openvpn.net/) server will be configured to use a recursive DNS ([PiHole](https://pi-hole.net/) + [Unbound](https://www.nlnetlabs.nl/projects/unbound/about/)) that is also set up by this code.
 
-This repository attempts to automate as much of the setup process as possible so that it can serve as a "one click" deployment for a fully functional VPN and DNS service that you can then own and manage, thus giving you ownership over your footprint on the internet.
+This repository attempts to automate as much* of the setup process as possible so that it can serve as a "one click" deployment for a fully functional VPN and DNS service that you can then own and manage, thus giving you ownership over your footprint on the internet.
 
-- [Self Hosted OpenVPN Access Server with Recursive DNS](#self-hosted-openvpn-access-server-with-recursive-dns)
+<small>_* some manual (one time) set up is still required for first time deployments_</small>
+
+- [Self Hosted VPN with Recursive DNS](#self-hosted-vpn-with-recursive-dns)
   - [Credits](#credits)
   - [Prerequisites](#prerequisites)
   - [Deployment](#deployment)
   - [Destroy](#destroy)
-  - [License agreement](#license-agreement)
-  - [SSH Keys](#ssh-keys)
-  - [SSM Parameters](#ssm-parameters)
+  - [Manual steps before installation](#manual-steps-before-installation)
+    - [License agreement](#license-agreement)
+    - [SSH Keys](#ssh-keys)
+    - [Hosted Zone](#hosted-zone)
+    - [SSM Parameters](#ssm-parameters)
   - [Troubleshooting](#troubleshooting)
     - [General reminders](#general-reminders)
     - [For the Pi Hole EC2 image](#for-the-pi-hole-ec2-image)
@@ -44,16 +51,16 @@ Making all this wouldn't have been possible without the wisdom of these awesome 
 
 1. `nodejs@12x` and `npm`
 2. `PuTTY` or similar SSH client (or command line if you prefer that)
-3. Your own domain name. _In my case, I purchased my domain name directly from AWS which automatically created a public Hosted Zone in Route53 for me. This setup does not cover manual creation of Hosted Zones for domain names registered outside AWS_
-4. An understanding that this setup incurs cost since it is deployed on AWS. The `t2.micro` EC2 instances used are free tier for *12 months* for *new* customers only. Use the TCO calculator to get an estimate of your costs by using this infrastructure and modify the instance type if needed (I cannot vouch for the stability of the setup for different instance types, try it and let me know :smile:) 
+3. Complete these [manual set up steps](#manual-steps-before-installation)
+4. An understanding that this setup incurs cost since it is deployed on AWS. The `t2.micro` EC2 instances used are within the free tier for *12 months* for *new* customers only. Use the TCO calculator to get an estimate of your costs by using this infrastructure and modify the instance type if needed (I cannot vouch for the stability of the setup for different instance types, try it and let me know :smile:) 
    1. EBS storage connected to EC2 instances are also chargeable. The PiHole EC2 instance is equipped with a 20GB EBS volume to cater for caching and adlists created/used by PiHole.
 ## Deployment
 
 Fork this repo, run `npm install`.
 
-`cdk` version has been locked to `1.95.1`
+> `cdk` version has been locked to `1.95.1` to prevent package conflicts.
 
-> Before running the deploy command, make sure you read all the instructions in this readme. It's worth it because if you don't, chances are the deployment will not work.
+> Before running the deploy command, ensure that you have read all the instructions in this readme. It's worth taking the time to do so as chances are the deployment will not work if certain pre-requisites steps aren't met.
 
 A batch file and NPM script has been made to simplify deployment.
 
@@ -72,7 +79,7 @@ The bootstrap command should resemble this:
 ```powershell
 npx cdk@1.95.1 bootstrap aws://<YOUR_AWS_ACCOUNT_ID>/<AWS_REGION> --profile <YOUR_IAM_PROFILE>
 ```
-> Remember: Bootstrapping is a one time operation. You don't need to bootstrap CDK if you've already done it before for the account in question.
+> Bootstrapping is a one time operation. You don't need to bootstrap CDK every time you make a deployment for the given AWS account..
 
 ## Destroy
 
@@ -83,18 +90,31 @@ npm run cdk:destroy -- <YOUR_AWS_ACCOUNT_ID> <AWS_REGION> --profile <YOUR_IAM_PR
 ```
 
 This removes pretty much everything created by this stack so that you are not charged for resources on AWS that you are no longer using.
-## License agreement
+
+Some notes:
+1. Cloudwatch Log Groups created by this stack are not deleted. Only the log entries themselves will be cleared out.
+2. The S3 bucket created by CDK bootstrap is not deleted.
+## Manual steps before installation
+
+There are some manual steps that have to be done in the AWS Console before running the CDK deploy function. This is to ensure your account is properly set up before deploying infrastructure on to it.
+### License agreement
 
 OpenVPN Access Server AMI requires that you manually [accept the license agreement](https://github.com/mattmcclean/openvpn-cdk-demo/issues/1) before using the image.
 
 Make sure you go to Amazon Marketplace Subscriptions and subscribe to the AMI that you are using to spin up EC2 instances in this code and accept the license agreement to use the image.
 
 The OpenVPN Auto Scaling Group will not be able to launch any EC2 instances with this image if the license agreement is not accepted.
-## SSH Keys
+### SSH Keys
 
 The code will use predefined SSH key names when defining auto scaling groups so that we can access the ec2 instances spawned using SSH.
 Please note that they key should first be created in the account _manually_ by going to `EC2 > Network & Security > Key Pairs` and defining the key (either in `.ppk` or `.pem` format) _before_ deploying the infrastructure code. Creation of keys in this interface will result in either a `.ppk` or `.pem` file to be downloaded to your machine. Store these safely as you will need them later.
-## SSM Parameters
+
+### Hosted Zone
+
+You will need a registered domain name for this setup to work properly.
+
+_In my case, I purchased my domain name directly from AWS which automatically created a public Hosted Zone in Route53 for me. While it is possible to create a Hosted Zone based on a domain name that has been registered outside AWS, that is beyond the scope of this readme._
+### SSM Parameters
 
 Before deploying infrastructure, set up SSM with the following parameters so that OpenVPN access server & PiHole may be configured properly.
 Take note of the parameters set as these will be required later when using the service.

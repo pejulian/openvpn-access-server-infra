@@ -430,20 +430,20 @@ describe('OpenVpnAccessServerInfraStack', () => {
         expect(subnetLogicalIds).toContain(ec2Subnet.capturedValue);
     });
 
-    it('should create an Elastic IP for the OpenVPN EC2 instances', () => {
-        const output = new OpenVpnAccessServerInfraStack(
-            stack,
-            stackId,
-            stackProps
-        );
+    // it('should create an Elastic IP for the OpenVPN EC2 instances', () => {
+    //     const output = new OpenVpnAccessServerInfraStack(
+    //         stack,
+    //         stackId,
+    //         stackProps
+    //     );
 
-        const elasticIpLogicalId = output.getLogicalId(output.openVpnElasticIp);
-        expect(elasticIpLogicalId).not.toBeUndefined();
+    //     const elasticIpLogicalId = output.getLogicalId(output.openVpnElasticIp);
+    //     expect(elasticIpLogicalId).not.toBeUndefined();
 
-        expect(output).toHaveResource('AWS::EC2::EIP', {
-            Domain: 'vpc',
-        });
-    });
+    //     expect(output).toHaveResource('AWS::EC2::EIP', {
+    //         Domain: 'vpc',
+    //     });
+    // });
 
     it('should create an Elastic IP for the PiHole EC2 instance', () => {
         const output = new OpenVpnAccessServerInfraStack(
@@ -458,7 +458,7 @@ describe('OpenVpnAccessServerInfraStack', () => {
 
         const elasticIpLogicalId = output.getLogicalId(output.piHoleElasticIp);
 
-        expect(output).toCountResources('AWS::EC2::EIP', 2);
+        expect(output).toCountResources('AWS::EC2::EIP', 1);
 
         expect(output).toHaveResource('AWS::EC2::EIP', {
             Domain: 'vpc',
@@ -718,9 +718,9 @@ describe('OpenVpnAccessServerInfraStack', () => {
                         Action: [
                             'ec2:DescribeInstances', // Describes one or more of your instances.
                             'ec2:ModifyInstanceAttribute', // Modifies the specified attribute of the specified instance.
-                            'ec2:DescribeAddresses', // Describes one or more of your Elastic IP addresses.
-                            'ec2:AssociateAddress', // Associates an Elastic IP address with an instance or a network interface.
-                            'ec2:DisassociateAddress', // Allow an elastic ip address to be disassociated
+                            // 'ec2:DescribeAddresses', // Describes one or more of your Elastic IP addresses.
+                            // 'ec2:AssociateAddress', // Associates an Elastic IP address with an instance or a network interface.
+                            // 'ec2:DisassociateAddress', // Allow an elastic ip address to be disassociated
                             'route53:ChangeResourceRecordSets', // Allows changes to records in a given hosted zone
                         ],
                         Effect: 'Allow',

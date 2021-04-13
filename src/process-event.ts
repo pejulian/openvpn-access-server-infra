@@ -13,7 +13,6 @@ import { PromiseResult } from 'aws-sdk/lib/request';
 const HOSTED_ZONE = process.env['HOSTED_ZONE'];
 const DNS_NAME = process.env['DNS_NAME'];
 const REGION = process.env['REGION'];
-const EIP_ALLOCATION_ID = process.env['EIP_ALLOCATION_ID'];
 
 const ec2Client = new EC2({
     region: REGION,
@@ -87,9 +86,26 @@ const instanceLaunchActions = async (
     try {
         console.log('Calling ec2.describe_instances');
 
-        await describeEc2Instances(instanceId);
+        const describeInstancesResponse = await describeEc2Instances(instanceId);
 
-        const publicIp = await associateElasticIpAddress(instanceId);
+        // const publicIp = await associateElasticIpAddress(instanceId);
+
+        let publicIp: string | null = null;
+        if (
+            typeof describeInstancesResponse?.Reservations?.[0]
+                ?.Instances?.[0]?.PublicIpAddress !== 'undefined'
+        ) {
+            publicIp =
+                describeInstancesResponse.Reservations[0].Instances[0]
+                    .PublicIpAddress;
+            console.log(`Successfully got public IP address ${publicIp} for EC2 instance ${instanceId}`);
+        } else {
+            return {
+                statusCode: 500,
+                body: `Could not retrieve the public IP address for EC2 instance ${instanceId}`,
+            };
+        }
+
 
         try {
             // update the instance property
@@ -174,114 +190,113 @@ const instanceLaunchActions = async (
     }
 };
 
-/**
- * Associates an elastic ip address to an EC2 instance
- * @param instanceId The EC2 instance to associate the elastic IP address to
- * @returns
- */
-const associateElasticIpAddress = async (
-    instanceId: string
-): Promise<string> => {
-    try {
-        // Fetch the elastic ip to be used by this ec2 instance
-        const describedEipAddresses = await describeEipAddresses();
-        const eipAddress = describedEipAddresses.Addresses?.[0];
+// /**
+//  * Associates an elastic ip address to an EC2 instance
+//  * @param instanceId The EC2 instance to associate the elastic IP address to
+//  * @returns
+//  */
+// const associateElasticIpAddress = async (
+//     instanceId: string
+// ): Promise<string> => {
+//     try {
+//         // Fetch the elastic ip to be used by this ec2 instance
+//         const describedEipAddresses = await describeEipAddresses();
+//         const eipAddress = describedEipAddresses.Addresses?.[0];
 
-        if (typeof eipAddress === 'undefined') {
-            throw new Error(`Elastic IP address is undefined!`);
-        }
+//         if (typeof eipAddress === 'undefined') {
+//             throw new Error(`Elastic IP address is undefined!`);
+//         }
 
-        try {
-            const response = await ec2Client
-                .associateAddress({
-                    AllocationId: eipAddress.AllocationId,
-                    InstanceId: instanceId,
-                })
-                .promise();
+//         try {
+//             const response = await ec2Client
+//                 .associateAddress({
+//                     AllocationId: eipAddress.AllocationId,
+//                     InstanceId: instanceId,
+//                 })
+//                 .promise();
 
-            console.log(
-                `Elastic Ip with allocation id ${eipAddress.AllocationId} has been associated to EC2 instance with id ${instanceId}`,
-                response.AssociationId
-            );
+//             console.log(
+//                 `Elastic Ip with allocation id ${eipAddress.AllocationId} has been associated to EC2 instance with id ${instanceId}`,
+//                 response.AssociationId
+//             );
 
-            if (
-                typeof eipAddress.PublicIp === 'undefined' ||
-                typeof eipAddress.AllocationId === 'undefined'
-            ) {
-                throw new Error(`Elastic IP has no Public IP or Allocation Id`);
-            }
+//             if (
+//                 typeof eipAddress.PublicIp === 'undefined' ||
+//                 typeof eipAddress.AllocationId === 'undefined'
+//             ) {
+//                 throw new Error(`Elastic IP has no Public IP or Allocation Id`);
+//             }
 
-            if (typeof response.AssociationId === 'undefined') {
-                throw new Error(
-                    `No association id found after associating Elastic Ip to EC2 instance`
-                );
-            }
+//             if (typeof response.AssociationId === 'undefined') {
+//                 throw new Error(
+//                     `No association id found after associating Elastic Ip to EC2 instance`
+//                 );
+//             }
 
-            return eipAddress.PublicIp;
-        } catch (e) {
-            console.error(
-                `Error allocating EIP with AllocationId ${eipAddress.AllocationId} to EC2 instance with ID ${instanceId}`,
-                e
-            );
-            throw e;
-        }
-    } catch (e) {
-        console.error(
-            `Error retrieving Elastic IP address with allocation id ${EIP_ALLOCATION_ID}`,
-            e
-        );
-        throw e;
-    }
-};
+//             return eipAddress.PublicIp;
+//         } catch (e) {
+//             console.error(
+//                 `Error allocating EIP with AllocationId ${eipAddress.AllocationId} to EC2 instance with ID ${instanceId}`,
+//                 e
+//             );
+//             throw e;
+//         }
+//     } catch (e) {
+//         console.error(
+//             `Error retrieving Elastic IP address with allocation id ${EIP_ALLOCATION_ID}`,
+//             e
+//         );
+//         throw e;
+//     }
+// };
 
-/**
- * Describes an elastic IP address
- * @returns The described Elastic IP address
- */
-const describeEipAddresses = async (): Promise<
-    PromiseResult<EC2.DescribeAddressesResult, AWSError>
-> => {
-    try {
-        // Fetch the elastic ip to be used by this ec2 instance
-        const describedEipAddresses = await ec2Client
-            .describeAddresses({
-                Filters: [
-                    {
-                        Name: 'domain',
-                        Values: ['vpc'],
-                    },
-                ],
-                AllocationIds: [EIP_ALLOCATION_ID!],
-            })
-            .promise();
+// /**
+//  * Describes an elastic IP address
+//  * @returns The described Elastic IP address
+//  */
+// const describeEipAddresses = async (): Promise<
+//     PromiseResult<EC2.DescribeAddressesResult, AWSError>
+// > => {
+//     try {
+//         // Fetch the elastic ip to be used by this ec2 instance
+//         const describedEipAddresses = await ec2Client
+//             .describeAddresses({
+//                 Filters: [
+//                     {
+//                         Name: 'domain',
+//                         Values: ['vpc'],
+//                     },
+//                 ],
+//                 AllocationIds: [EIP_ALLOCATION_ID!],
+//             })
+//             .promise();
 
-        console.log(
-            `Described EIP Addresses`,
-            JSON.stringify(describedEipAddresses, undefined, 4)
-        );
+//         console.log(
+//             `Described EIP Addresses`,
+//             JSON.stringify(describedEipAddresses, undefined, 4)
+//         );
 
-        return describedEipAddresses;
-    } catch (e) {
-        console.error(
-            `Error retrieving Elastic IP address with allocation id ${EIP_ALLOCATION_ID}`,
-            e
-        );
-        throw e;
-    }
-};
+//         return describedEipAddresses;
+//     } catch (e) {
+//         console.error(
+//             `Error retrieving Elastic IP address with allocation id ${EIP_ALLOCATION_ID}`,
+//             e
+//         );
+//         throw e;
+//     }
+// };
 
 /**
  * Describe an EC2 instance
  * @param instanceId The EC2 instance to be described
  */
-const describeEc2Instances = async (instanceId: string) => {
+const describeEc2Instances = async (instanceId: string): Promise<PromiseResult<EC2.DescribeInstancesResult, AWSError>> => {
     // get thet instance state
     const describeInstancesResponse = await ec2Client
         .describeInstances({
             InstanceIds: [instanceId],
         })
         .promise();
-
     console.log(
         `Response from describeInstances: ${JSON.stringify(
             describeInstancesResponse,
@@ -289,20 +304,6 @@ const describeEc2Instances = async (instanceId: string) => {
             4
         )}`
     );
+    return describeInstancesResponse;
 };
 
-// let publicIp: string | null = null;
-// if (
-//     typeof describeInstancesResponse?.Reservations?.[0]
-//         ?.Instances?.[0]?.PublicIpAddress !== 'undefined'
-// ) {
-//     publicIp =
-//         describeInstancesResponse.Reservations[0].Instances[0]
-//             .PublicIpAddress;
-//     console.log(`Successfully got IP address ${publicIp}`);
-// } else {
-//     return {
-//         statusCode: 500,
-//         body: `Did not receive the public IP address for ${instanceId}`,
-//     };
-// }

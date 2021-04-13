@@ -50,7 +50,6 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
     public readonly openVpnSecurityGroup: ec2.SecurityGroup;
     public readonly openVpnImage: ec2.GenericLinuxImage;
     public readonly openVpnAsg: autoscaling.AutoScalingGroup;
-    public readonly openVpnElasticIp: ec2.CfnEIP;
     public readonly openVpnAsgTopic: sns.Topic;
     public readonly processOpenVpnEventFn: lambda.Function;
     public readonly setOpenVpnAsgToZeroFn: lambda.Function;
@@ -367,11 +366,6 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
         // When the stack is deleted, destroy the Security Group
         this.openVpnSecurityGroup.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
 
-        // Create elastic ip for OpenVPN instance to use
-        this.openVpnElasticIp = new ec2.CfnEIP(this, `${id}-eip-openvpn`, {
-            domain: 'vpc', // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-eip.html#cfn-ec2-eip-domain
-        });
-        this.openVpnElasticIp.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
 
         // Create an S3 bucket to hold Lets Encrypt certs so that they can
         // be reused in subsequent OpenVPN EC2 instances created by the ASG
@@ -476,7 +470,6 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
                     HOSTED_ZONE: hostedZone,
                     DNS_NAME: `${region}.vpn.${zoneName}`,
                     REGION: region,
-                    EIP_ALLOCATION_ID: this.openVpnElasticIp.attrAllocationId,
                 },
             }
         );
@@ -490,9 +483,9 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
                     actions: [
                         'ec2:DescribeInstances', // Describes one or more of your instances.
                         'ec2:ModifyInstanceAttribute', // Modifies the specified attribute of the specified instance.
-                        'ec2:DescribeAddresses', // Describes one or more of your Elastic IP addresses.
-                        'ec2:AssociateAddress', // Associates an Elastic IP address with an instance or a network interface.
-                        'ec2:DisassociateAddress', // Allow an elastic ip address to be disassociated
+                        // 'ec2:DescribeAddresses', // Describes one or more of your Elastic IP addresses.
+                        // 'ec2:AssociateAddress', // Associates an Elastic IP address with an instance or a network interface.
+                        // 'ec2:DisassociateAddress', // Allow an elastic ip address to be disassociated
                         'route53:ChangeResourceRecordSets', // Allows changes to records in a given hosted zone
                     ],
                 })

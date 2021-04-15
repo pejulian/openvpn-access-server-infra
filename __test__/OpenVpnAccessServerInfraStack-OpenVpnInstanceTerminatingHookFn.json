@@ -1,0 +1,22 @@
+{
+    "Records": [
+        {
+            "EventSource": "aws:sns",
+            "EventVersion": "1.0",
+            "EventSubscriptionArn": "arn:aws:sns:eu-west-1:123552021017:OpenVpnAccessServerInfraStack-OpenVpnAccessServerInfraStackasgopenvpnlifecyclehookTopic1E5D515C-YWL3PPO3KDMU:50d2bb6f-30ea-402d-b1fa-f42203935578",
+            "Sns": {
+                "Type": "Notification",
+                "MessageId": "a99d55a1-f89c-51ab-8d3b-0d53978b5d56",
+                "TopicArn": "arn:aws:sns:eu-west-1:123552021017:OpenVpnAccessServerInfraStack-OpenVpnAccessServerInfraStackasgopenvpnlifecyclehookTopic1E5D515C-YWL3PPO3KDMU",
+                "Subject": "Auto Scaling:  Lifecycle action 'TERMINATING' for instance i-0242f2f4a3f027b85 in progress.",
+                "Message": "{\"Origin\":\"AutoScalingGroup\",\"LifecycleHookName\":\"openvpn-instance-termination-lifecycle-hook\",\"Destination\":\"EC2\",\"AccountId\":\"123552021017\",\"RequestId\":\"5487e9ac-efe3-4df3-8dd4-1549237aa99a\",\"LifecycleTransition\":\"autoscaling:EC2_INSTANCE_TERMINATING\",\"AutoScalingGroupName\":\"OpenVpnAccessServerInfraStack-asg-openvpn\",\"Service\":\"AWS Auto Scaling\",\"Time\":\"2021-04-15T16:41:59.710Z\",\"EC2InstanceId\":\"i-0242f2f4a3f027b85\",\"LifecycleActionToken\":\"61579bd3-de96-4341-b773-b4b961e0f6e1\"}",
+                "Timestamp": "2021-04-15T16:41:59.737Z",
+                "SignatureVersion": "1",
+                "Signature": "eCezxNoQBp+06RjaB08yAs01WOJnwmeRaZ7QAM5rM1TWCsp2th9cX3Y9nbMMqQ2UDBRLJ5thrU+tFHxrNBfk0OSzEzYvdiWfUhg/ug2LeECiqmR8GlflEsaFDeIrazc0rHcp/OPJDAy+/zLdem3aHoAPUS9y52zzvVKF7E/kGM3KGw7XWGeY+FM7ILO/p5Lrxog63RLfLYfqXEvKX8YFiKy7nkB5YEkm5PY5/wLiY1PP+qD1BT5kCfZZFxUkrrQl6ar0FXtqrE04CdyEaFhChD3l4OZoW6iEFxNa1alO90ml0dHuJ5rIibJct8ROqZsONzywYrpOUg418s4PbEc+oA==",
+                "SigningCertUrl": "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-010a507c1833636cd94bdb98bd93083a.pem",
+                "UnsubscribeUrl": "https://sns.eu-west-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=arn:aws:sns:eu-west-1:123552021017:OpenVpnAccessServerInfraStack-OpenVpnAccessServerInfraStackasgopenvpnlifecyclehookTopic1E5D515C-YWL3PPO3KDMU:50d2bb6f-30ea-402d-b1fa-f42203935578",
+                "MessageAttributes": {}
+            }
+        }
+    ]
+}

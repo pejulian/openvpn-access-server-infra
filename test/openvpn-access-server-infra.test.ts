@@ -26,7 +26,6 @@ import * as events from '@aws-cdk/aws-events';
 import * as iam from '@aws-cdk/aws-iam';
 import * as ssm from '@aws-cdk/aws-ssm';
 import * as autoscaling from '@aws-cdk/aws-autoscaling';
-import * as dynamodb from '@aws-cdk/aws-dynamodb';
 
 jest.mock('@aws-cdk/aws-lambda', () => {
     const actualLambda: typeof lambda = jest.requireActual(

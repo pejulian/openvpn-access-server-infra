@@ -8,13 +8,13 @@ import * as cdk from '@aws-cdk/core';
 import * as ec2 from '@aws-cdk/aws-ec2';
 import * as sns from '@aws-cdk/aws-sns';
 import * as autoscaling from '@aws-cdk/aws-autoscaling';
+import * as hooktargets from '@aws-cdk/aws-autoscaling-hooktargets';
 import * as ssm from '@aws-cdk/aws-ssm';
 import * as lambda from '@aws-cdk/aws-lambda';
 import * as iam from '@aws-cdk/aws-iam';
 import * as logs from '@aws-cdk/aws-logs';
 import * as route53 from '@aws-cdk/aws-route53';
 import * as s3 from '@aws-cdk/aws-s3';
-import * as dynamodb from '@aws-cdk/aws-dynamodb';
 
 import { Rule, Schedule } from '@aws-cdk/aws-events';
 import { LambdaFunction } from '@aws-cdk/aws-events-targets';
@@ -50,6 +50,10 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
     public readonly openVpnSecurityGroup: ec2.SecurityGroup;
     public readonly openVpnImage: ec2.GenericLinuxImage;
     public readonly openVpnAsg: autoscaling.AutoScalingGroup;
+    public readonly openVpnInstanceTerminatingLifecycleHook: autoscaling.LifecycleHook;
+    public readonly openVpnInstanceTerminatingFunctionHook: hooktargets.FunctionHook;
+    public readonly openVpnInstanceTerminatingFunction: lambda.Function;
+    public readonly openVpnInstanceTerminatingSsmDocument: ssm.CfnDocument;
     public readonly openVpnAsgTopic: sns.Topic;
     public readonly processOpenVpnEventFn: lambda.Function;
     public readonly setOpenVpnAsgToZeroFn: lambda.Function;
@@ -366,7 +370,6 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
         // When the stack is deleted, destroy the Security Group
         this.openVpnSecurityGroup.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
 
-
         // Create an S3 bucket to hold Lets Encrypt certs so that they can
         // be reused in subsequent OpenVPN EC2 instances created by the ASG
         // after the initial one that first created the cert was destroyed
@@ -437,6 +440,95 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
             }
         );
 
+        this.openVpnInstanceTerminatingSsmDocument = new ssm.CfnDocument(
+            this,
+            `${id}-openvpn-instance-terminating-ssm-document`,
+            {
+                documentType: 'Command',
+                name: `OpenVpnInstanceTerminatingDocument`,
+                content: {
+                    schemaVersion: '1.2',
+                    description: 'Backup latest SSL certificate',
+                    parameters: {},
+                    runtimeConfig: {
+                        'aws:runShellScript': {
+                            properties: [
+                                {
+                                    id: '0.aws:runShellScript',
+                                    runCommand: [
+                                        
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                },
+                tags: Object.entries(Stack.of(this).tags.tagValues()).map(
+                    ([key, value]) =>
+                        ({
+                            key,
+                            value,
+                        } as cdk.CfnTag)
+                ),
+            }
+        );
+
+        this.openVpnInstanceTerminatingFunction = new lambda.Function(
+            this,
+            `${id}-openvpn-instance-terminating-hook-fn`,
+            {
+                runtime: lambda.Runtime.NODEJS_14_X,
+                memorySize: 128,
+                functionName: `${id}-OpenVpnInstanceTerminatingHookFn`,
+                code: lambda.Code.fromAsset(path.join(__dirname, '../dist')),
+                handler: 'instance-terminating.handler',
+                timeout: cdk.Duration.seconds(30),
+                logRetention: logs.RetentionDays.ONE_DAY,
+                environment: {
+                    REGION: region,
+                    DOCUMENT_NAME: this.openVpnInstanceTerminatingSsmDocument.name ?? ''
+                },
+            }
+        );
+
+        if (this.openVpnInstanceTerminatingFunction.role) {
+            // add policy so that lambda can call lifecycle actions for auto scaling group
+            this.openVpnInstanceTerminatingFunction.role.addToPrincipalPolicy(
+                new iam.PolicyStatement({
+                    resources: [this.openVpnAsg.autoScalingGroupArn],
+                    effect: iam.Effect.ALLOW,
+                    actions: ['autoscaling:CompleteLifecycleAction'],
+                })
+            );
+
+            // add policy so that lambda can interact with acm
+            this.openVpnInstanceTerminatingFunction.role.addToPrincipalPolicy(
+                new iam.PolicyStatement({
+                    resources: ['*'],
+                    effect: iam.Effect.ALLOW,
+                    actions: ['acm:*'],
+                })
+            );
+        }
+
+        this.openVpnInstanceTerminatingFunctionHook = new hooktargets.FunctionHook(
+            this.openVpnInstanceTerminatingFunction
+        );
+
+        this.openVpnInstanceTerminatingLifecycleHook = new autoscaling.LifecycleHook(
+            this,
+            `${id}-asg-openvpn-lifecycle-hook`,
+            {
+                autoScalingGroup: this.openVpnAsg,
+                lifecycleTransition:
+                    autoscaling.LifecycleTransition.INSTANCE_TERMINATING,
+                lifecycleHookName: `openvpn-instance-termination-lifecycle-hook`,
+                defaultResult: autoscaling.DefaultResult.CONTINUE,
+                heartbeatTimeout: cdk.Duration.minutes(5),
+                notificationTarget: this.openVpnInstanceTerminatingFunctionHook,
+            }
+        );
+
         // Ensure that all instances can read from the bucket containing the certs
         this.openVpnAsg.addToRolePolicy(
             new iam.PolicyStatement({
@@ -474,7 +566,7 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
             }
         );
 
-        // add policy so that EC2 instance can allocte elastic IP
+        // add policy so that lambda can interact with ec2 and route53
         if (this.processOpenVpnEventFn.role) {
             this.processOpenVpnEventFn.role.addToPrincipalPolicy(
                 new iam.PolicyStatement({

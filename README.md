@@ -206,7 +206,7 @@ Log in to AWS Console and go to the `Lambda` service, locate the above mentioned
 
 **To set capacity to 0**
 
-Sets the ASG capacity to 0 and subsequentyly
+Sets the ASG capacity to 0 and subsequently deletes the EC2 instance (scale in)
 
 ```json
 {
@@ -225,6 +225,8 @@ Sets the ASG capacity to 0 and subsequentyly
 ```
 
 **To set capacity to 1**
+
+Sets the ASG capacity to 1 and subsequently creates an EC2 instance (scale out)
 
 ```json
 {

@@ -1,0 +1,13 @@
+{
+    "version": "0",
+    "id": "7fd27b69-08bc-e133-78c3-692e4383a2d2",
+    "detail-type": "Scheduled Event",
+    "source": "aws.events",
+    "account": "123552021017",
+    "time": "2021-04-11T14:00:00Z",
+    "region": "eu-west-1",
+    "resources": [
+        "arn:aws:events:eu-west-1:123552021017:rule/OpenVpnAccessServerInfraS-RemoveCapacityRuleDFA825-1A0NW9U7MI5YO"
+    ],
+    "detail": {}
+}

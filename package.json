@@ -2,7 +2,7 @@
     "name": "openvpn-access-server-infra",
     "description": "AWS Infrastructure is code for a self hosted and scalable OpenVPN Access Server in AWS",
     "license": "ISC",
-    "version": "0.0.35",
+    "version": "0.0.36",
     "author": {
         "email": "bleushade@gmail.com",
         "name": "Julian Pereira",

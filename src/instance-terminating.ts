@@ -1,18 +1,12 @@
-import { AutoScaling, SSM, ACM } from 'aws-sdk';
+import { AutoScaling, SSM } from 'aws-sdk';
 import { Context, SNSEvent } from 'aws-lambda';
 
 const REGION = process.env['REGION'];
 const DOCUMENT_NAME = process.env['DOCUMENT_NAME'];
-
-const autoscaling = new AutoScaling({
-    region: REGION,
-});
+const DNS_NAME = process.env['DNS_NAME'];
+const BUCKET_NAME = process.env['BUCKET_NAME'];
 
 const ssm = new SSM({
-    region: REGION,
-});
-
-const acm = new ACM({
     region: REGION,
 });
 
@@ -65,42 +59,27 @@ export async function handler(
             ) as InstanceTerminatingNotification;
 
             console.log(
-                `Received msg: ${JSON.stringify(Message, undefined, 4)}`
+                `Parsed ASG lifecycle event message`,
+                JSON.stringify(parsedMessage, undefined, 4)
             );
 
-            const params = {
-                AutoScalingGroupName:
-                    parsedMessage.AutoScalingGroupName /* required */,
-                LifecycleActionResult: 'CONTINUE' /* required */,
-                LifecycleHookName:
-                    parsedMessage.LifecycleHookName /* required */,
-                InstanceId: parsedMessage.EC2InstanceId,
-                LifecycleActionToken: parsedMessage.LifecycleActionToken,
-            };
-
             // run cleanup action
+            const documentIdentifier = await listDocuments();
 
-            try {
-                const result = await autoscaling
-                    .completeLifecycleAction(params)
-                    .promise();
-
-                console.log(
-                    `Triggered lifecycle action!`,
-                    JSON.stringify(result, undefined, 4)
+            if (typeof documentIdentifier !== 'undefined') {
+                await sendCommand(
+                    documentIdentifier,
+                    parsedMessage.EC2InstanceId,
+                    parsedMessage.AutoScalingGroupName,
+                    parsedMessage.LifecycleHookName,
+                    parsedMessage.LifecycleActionToken
                 );
-
-                return {
-                    status: 500,
-                    body: JSON.stringify(`SUCCESS`),
-                };
-            } catch (e) {
-                console.log(`Failed to trigger lifecycle action`, e);
-                return {
-                    status: 500,
-                    body: JSON.stringify(`FAILED`),
-                };
             }
+
+            return {
+                status: 200,
+                body: JSON.stringify(`SUCCESS`),
+            };
         } catch (e) {
             console.error(`Error parsing SNSEvent`, e);
             throw e;
@@ -113,7 +92,7 @@ export async function handler(
     }
 }
 
-const listDocuments = async () => {
+const listDocuments = async (): Promise<SSM.DocumentIdentifier | undefined> => {
     try {
         const result = await ssm
             .listDocuments({
@@ -131,16 +110,76 @@ const listDocuments = async () => {
             JSON.stringify(result, undefined, 4)
         );
 
-        if (result.DocumentIdentifiers?.[0].Name === DOCUMENT_NAME) {
+        const match = result.DocumentIdentifiers?.find((documentIdentifier) => {
+            if (documentIdentifier.Name === DOCUMENT_NAME) {
+                return true;
+            }
+            return false;
+        });
 
+        if (typeof match === 'undefined') {
+            console.log(`No document with name ${DOCUMENT_NAME} found`);
         }
 
-        return result;
+        return match;
     } catch (e) {
         console.log(
             `Failed to list specified SSM Document ${DOCUMENT_NAME}`,
             e
         );
-        throw e;
+        return undefined;
+    }
+};
+
+/**
+ * Execute the contents of the specified document as a command to the EC2 instance
+ * @param document The document to execute
+ * @param instanceId The EC2 instance to run the command on
+ */
+const sendCommand = async (
+    document: SSM.DocumentIdentifier,
+    instanceId: string,
+    autoScalingGroupName: string,
+    lifecycleHookName: string,
+    lifecycleActionToken: string
+): Promise<string | undefined> => {
+    try {
+        if (typeof document.Name === 'undefined') {
+            console.log(
+                `Unnamed document cannot be run!`,
+                JSON.stringify(document, undefined, 4)
+            );
+            return;
+        }
+
+        console.log(
+            `Sending command via document name ${document.Name} to EC2 instance ${instanceId}`
+        );
+
+        const response = await ssm
+            .sendCommand({
+                DocumentName: document.Name,
+                InstanceIds: [instanceId],
+                TimeoutSeconds: 300,
+                Parameters: {
+                    region: [REGION!],
+                    domainName: [DNS_NAME!],
+                    bucketName: [BUCKET_NAME!],
+                    autoScalingGroupName: [autoScalingGroupName],
+                    lifecycleHookName: [lifecycleHookName],
+                    lifecycleActionToken: [lifecycleActionToken],
+                },
+            })
+            .promise();
+
+        console.log(
+            `Command response is`,
+            JSON.stringify(response, undefined, 4)
+        );
+
+        return response.Command?.CommandId;
+    } catch (e) {
+        console.log(`An error occured while sending command`, e);
+        return undefined;
     }
 };

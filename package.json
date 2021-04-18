@@ -2,7 +2,7 @@
     "name": "openvpn-access-server-infra",
     "description": "AWS Infrastructure is code for a self hosted and scalable OpenVPN Access Server in AWS",
     "license": "ISC",
-    "version": "0.0.35",
+    "version": "0.0.37",
     "author": {
         "email": "bleushade@gmail.com",
         "name": "Julian Pereira",
@@ -29,24 +29,23 @@
         "prettier:format": "prettier --config .prettierrc.js --write src/**/**.ts lib/**/*.ts bin/**/*.ts",
         "prettier:check": "prettier --config .prettierrc.js --list-different src/**/**.ts lib/**/*.ts bin/**/*.ts",
         "cdk": "cdk",
-        "cdk:test-deploy": "rimraf cdk.out && npm run build && cdk-deploy.bat",
         "cdk:deploy": "npm run test && npm run update-version && rimraf cdk.out && npm run build && cdk-deploy.bat",
         "cdk:destroy": "cdk-destroy.bat",
         "update-version": "node ./scripts/npm-update-version.js"
     },
     "devDependencies": {
-        "@aws-cdk/assert": "1.95.1",
-        "@aws-cdk/aws-autoscaling": "1.95.1",
-        "@aws-cdk/aws-autoscaling-hooktargets": "1.95.1",
-        "@aws-cdk/aws-ec2": "1.95.1",
-        "@aws-cdk/aws-events-targets": "1.95.1",
-        "@aws-cdk/aws-lambda-event-sources": "1.95.1",
-        "@aws-cdk/aws-route53": "1.95.1",
-        "@aws-cdk/aws-sns": "1.95.1",
+        "@aws-cdk/assert": "1.98.0",
+        "@aws-cdk/aws-autoscaling": "1.98.0",
+        "@aws-cdk/aws-autoscaling-hooktargets": "1.98.0",
+        "@aws-cdk/aws-ec2": "1.98.0",
+        "@aws-cdk/aws-events-targets": "1.98.0",
+        "@aws-cdk/aws-lambda-event-sources": "1.98.0",
+        "@aws-cdk/aws-route53": "1.98.0",
+        "@aws-cdk/aws-sns": "1.98.0",
         "@types/aws-lambda": "^8.10.73",
         "@types/jest": "^26.0.10",
         "@types/node": "10.17.27",
-        "aws-cdk": "1.95.1",
+        "aws-cdk": "1.98.0",
         "aws-sdk": "^2.874.0",
         "aws-sdk-mock": "^5.1.0",
         "child-process-promise": "^2.2.1",
@@ -62,7 +61,7 @@
         "webpack-cli": "^4.6.0"
     },
     "dependencies": {
-        "@aws-cdk/core": "1.95.1",
+        "@aws-cdk/core": "1.98.0",
         "source-map-support": "^0.5.16"
     }
 }

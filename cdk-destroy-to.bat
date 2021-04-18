@@ -3,7 +3,7 @@
 if ($args.length -ge 2) {
     $env:CDK_DEPLOY_ACCOUNT, $args = $args
     $env:CDK_DEPLOY_REGION,  $args = $args
-    npx cdk@1.95.1 destroy $args
+    npx cdk@1.98.0 destroy $args
     exit $lastExitCode
 } else {
     [console]::error.writeline("Provide AWS account and region as first two args.")

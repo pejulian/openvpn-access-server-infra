@@ -52,13 +52,13 @@ Making all this wouldn't have been possible without the wisdom of these awesome 
 1. `nodejs@12x` and `npm`
 2. `PuTTY` or similar SSH client (or command line if you prefer that)
 3. Complete these [manual set up steps](#manual-steps-before-installation)
-4. An understanding that this setup incurs cost since it is deployed on AWS. The `t2.micro` EC2 instances used are within the free tier for *12 months* for *new* customers only. Use the TCO calculator to get an estimate of your costs by using this infrastructure and modify the instance type if needed (I cannot vouch for the stability of the setup for different instance types, try it and let me know :smile:) 
+4. An understanding that this setup incurs a monthly costs since it is deployed on AWS. The `t3a.micro` EC2 instances defined in the code are _NOT_ within the free tier for new AWS account signups. Use `t2.micro` instances to get 750 hours for *12 months* if signing up as a *new* customer. Use the TCO calculator to get an estimate of your costs by using this infrastructure and modify the instance type if needed (I cannot vouch for the stability of the setup for different instance types, try it and let me know :smile:). If you will be paying for this setup, consider setting up a Budget or Billing Alarm to better monitor your monthly costs.
    1. EBS storage connected to EC2 instances are also chargeable. The PiHole EC2 instance is equipped with a 20GB EBS volume to cater for caching and adlists created/used by PiHole.
 ## Deployment
 
 Fork this repo, run `npm install`.
 
-> `cdk` version has been locked to `1.95.1` to prevent package conflicts.
+> `cdk` version has been locked to `1.98.0` to prevent package conflicts.
 
 > Before running the deploy command, ensure that you have read all the instructions in this readme. It's worth taking the time to do so as chances are the deployment will not work if certain pre-requisites steps aren't met.
 
@@ -77,7 +77,7 @@ If this is your very first time running CDK to deploy infrastructure to your AWS
 The bootstrap command should resemble this:
 
 ```powershell
-npx cdk@1.95.1 bootstrap aws://<YOUR_AWS_ACCOUNT_ID>/<AWS_REGION> --profile <YOUR_IAM_PROFILE>
+npx cdk@1.98.0 bootstrap aws://<YOUR_AWS_ACCOUNT_ID>/<AWS_REGION> --profile <YOUR_IAM_PROFILE>
 ```
 > Bootstrapping is a one time operation. You don't need to bootstrap CDK every time you make a deployment for the given AWS account..
 
@@ -157,7 +157,16 @@ It _may not_ be immediately possible to access the Pi Hole web interface after i
  1. Did you wait at least 5 minutes after stack creation completed before trying to hit the URL(s)? 
     1. You should at least wait 5 minutes for things to get properly installed because the `userData` script for the Pi Hole instance is doing additional work on the Ubuntu OS _after_ the instance is created
  2. Remember that the PiHole web interface is accessed using HTTP
- 3. If you are accessing the Pi Hole web interface from the FQDN and get a timeout, remember that you are accessing a route53 domain mapping to the EC2 public IP that was recently created with the stack. It can take up to 2 hours before DNS records are propagated
+ 3. If you login to your Pi Hole admin dashboard and see that the FTL service failed to start, it could be that your EC2 instance type uses a differently named network interface (the hardcoded one is `ens5`). Run `ifconfig` to view the network interfaces configured for your instance and modify the `PIHOLE_INTERFACE` value in `/etc/pihole/setupVars.conf` with the correct network interface name and finally, restart the pihole service ussing `pihole restartdns`.
+    1. You can verify that the Pi Hole DNS service started up correctly by looking for this entry in the Pi Hole setup log (`/var/log/cloud-init-output.log`)
+       ```bash
+         [✓] DNS service is listening
+            [✓] UDP (IPv4)
+            [✓] TCP (IPv4)
+            [✓] UDP (IPv6)
+            [✓] TCP (IPv6)
+       ``` 
+ 4. If you are accessing the Pi Hole web interface from the FQDN and get a timeout, remember that you are accessing a route53 domain mapping to the EC2 public IP that was recently created with the stack. It can take up to 2 hours before DNS records are propagated
     1. Try to access the Pi Hole web interface directly from the Public IP address instead (you can get the public IP by viewing the EC2 instance details in AWS console)
     2. If the above does not work, SSH into the instance to check if there are any error messages or requests for a restart
        1. Suggested verification steps:
@@ -168,7 +177,7 @@ It _may not_ be immediately possible to access the Pi Hole web interface after i
        3. Reboot the EC2 instance manually in the EC2 console and then try to access the Pi Hole web interface after a minute or so.
           1. Rebooting shouldnt change your EC2 IP address but it will restart network services that failed to update
        4. Verify that you can indeed access the web interface from the public IP address and the FQDN.
-1. If you want to change your Pi Hole web admin login passord, `ssh` into your pihole EC2 instance and run `pihole -a -p <password>` to set the password manually.
+ 5. If you want to change your Pi Hole web admin login passord, `ssh` into your pihole EC2 instance and run `pihole -a -p <password>` to set the password manually.
 
 ### For the OpenVPN Instance
 

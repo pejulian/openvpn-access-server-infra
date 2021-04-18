@@ -47,6 +47,7 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
     public readonly vpc: ec2.Vpc;
     public readonly subnets: ec2.ISubnet[];
 
+    public readonly openVpnCertBucket: s3.Bucket;
     public readonly openVpnSecurityGroup: ec2.SecurityGroup;
     public readonly openVpnImage: ec2.GenericLinuxImage;
     public readonly openVpnAsg: autoscaling.AutoScalingGroup;
@@ -59,7 +60,6 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
     public readonly setOpenVpnAsgToZeroFn: lambda.Function;
     public readonly setOpenVpnAsgToOneFn: lambda.Function;
     public readonly openVpnUrlCfnOutput: cdk.CfnOutput;
-    public readonly openVpnCertBucket: s3.Bucket;
 
     public readonly piHoleSecurityGroup: ec2.SecurityGroup;
     public readonly piHoleImage: ec2.IMachineImage;
@@ -247,7 +247,7 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
             instanceType: props?.instanceType
                 ? props.instanceType
                 : ec2.InstanceType.of(
-                      ec2.InstanceClass.T2,
+                      ec2.InstanceClass.T3A,
                       ec2.InstanceSize.MICRO
                   ),
             machineImage: this.piHoleImage,
@@ -372,15 +372,16 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
 
         // Create an S3 bucket to hold Lets Encrypt certs so that they can
         // be reused in subsequent OpenVPN EC2 instances created by the ASG
-        // after the initial one that first created the cert was destroyed
+        // after the initial one that first created the cert is destroyed
         this.openVpnCertBucket = new s3.Bucket(this, `${id}-openvpn-certs`, {
             autoDeleteObjects: true,
             blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
             removalPolicy: cdk.RemovalPolicy.DESTROY,
+            encryption: s3.BucketEncryption.KMS_MANAGED,
             lifecycleRules: [
                 {
                     enabled: true,
-                    expiration: cdk.Duration.days(30),
+                    expiration: cdk.Duration.days(7),
                 },
             ],
         });
@@ -423,7 +424,7 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
                 instanceType: props?.instanceType
                     ? props.instanceType
                     : ec2.InstanceType.of(
-                          ec2.InstanceClass.T2,
+                          ec2.InstanceClass.T3A,
                           ec2.InstanceSize.MICRO
                       ),
                 machineImage: this.openVpnImage,
@@ -440,6 +441,10 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
             }
         );
 
+        //==========================================================================================================
+        // ASG Lifecycle Hooks
+        //==========================================================================================================
+
         this.openVpnInstanceTerminatingSsmDocument = new ssm.CfnDocument(
             this,
             `${id}-openvpn-instance-terminating-ssm-document`,
@@ -447,21 +452,50 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
                 documentType: 'Command',
                 name: `OpenVpnInstanceTerminatingDocument`,
                 content: {
-                    schemaVersion: '1.2',
+                    schemaVersion: '2.2',
                     description: 'Backup latest SSL certificate',
-                    parameters: {},
-                    runtimeConfig: {
-                        'aws:runShellScript': {
-                            properties: [
-                                {
-                                    id: '0.aws:runShellScript',
-                                    runCommand: [
-                                        
-                                    ]
-                                }
-                            ]
-                        }
-                    }
+                    parameters: {
+                        domainName: {
+                            type: 'String',
+                            description: `The domain name to use to register the SSL certificate`,
+                        },
+                        region: {
+                            type: 'String',
+                            description: `The AWS region to use when using the SDK to communicate with AWS`,
+                        },
+                        autoScalingGroupName: {
+                            type: 'String',
+                            description:
+                                'The name of the auto scaling group where lifecycle operations are being triggered',
+                        },
+                        lifecycleHookName: {
+                            type: 'String',
+                            description: `The lifecycle hook name`,
+                        },
+                        lifecycleActionToken: {
+                            type: 'String',
+                            description: `The lifecycle token (needed for completing the hook)`,
+                        },
+                        bucketName: {
+                            type: 'String',
+                            description: `The S3 bucket where SSL certificates will be backed up to`,
+                        },
+                    },
+                    mainSteps: [
+                        {
+                            action: 'aws:runShellScript',
+                            name: 'runShellScript',
+                            inputs: {
+                                timeoutSeconds: `${cdk.Duration.minutes(
+                                    5
+                                ).toSeconds()}`,
+                                runCommand: [
+                                    ...OpenVpnAccessServerInfraStack.NVM_INSTALL_COMMANDS,
+                                    `npx openvpn-access-server-scripts@${userDataScriptsVersionTag} backup-ssl-cert -d "{{ domainName }}" -r "{{ region }}" -b "{{ bucketName }}" -a "{{ autoScalingGroupName }}" -l "{{ lifecycleHookName }}" -t "{{ lifecycleActionToken }}"`,
+                                ],
+                            },
+                        },
+                    ],
                 },
                 tags: Object.entries(Stack.of(this).tags.tagValues()).map(
                     ([key, value]) =>
@@ -473,6 +507,40 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
             }
         );
 
+        // allow System Manager Agent to make API calls to system manager
+        this.openVpnAsg.role.addManagedPolicy(
+            iam.ManagedPolicy.fromAwsManagedPolicyName(
+                'AmazonSSMManagedInstanceCore'
+            )
+        );
+
+        // Ensure that all ec2 instances can read from the bucket containing the certs
+        this.openVpnAsg.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: [
+                    's3:GetObject*',
+                    's3:GetBucket*',
+                    's3:List*',
+                    's3:PutObject*',
+                    'kms:Decrypt',
+                ],
+                resources: [
+                    `${this.openVpnCertBucket.bucketArn}`,
+                    `${this.openVpnCertBucket.bucketArn}/*`,
+                ],
+                effect: iam.Effect.ALLOW,
+            })
+        );
+
+        // add policy so that ec2 instances can call lifecycle actions for auto scaling group
+        this.openVpnAsg.role.addToPrincipalPolicy(
+            new iam.PolicyStatement({
+                resources: ['*'],
+                effect: iam.Effect.ALLOW,
+                actions: ['autoscaling:CompleteLifecycleAction'],
+            })
+        );
+
         this.openVpnInstanceTerminatingFunction = new lambda.Function(
             this,
             `${id}-openvpn-instance-terminating-hook-fn`,
@@ -480,33 +548,43 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
                 runtime: lambda.Runtime.NODEJS_14_X,
                 memorySize: 128,
                 functionName: `${id}-OpenVpnInstanceTerminatingHookFn`,
+                description: `Lambda function that is triggered by the Auto Scaling Group lifecycle event when an EC2 instance is shutting down`,
                 code: lambda.Code.fromAsset(path.join(__dirname, '../dist')),
                 handler: 'instance-terminating.handler',
-                timeout: cdk.Duration.seconds(30),
+                timeout: cdk.Duration.minutes(5),
                 logRetention: logs.RetentionDays.ONE_DAY,
                 environment: {
                     REGION: region,
-                    DOCUMENT_NAME: this.openVpnInstanceTerminatingSsmDocument.name ?? ''
+                    BUCKET_NAME: this.openVpnCertBucket.bucketName,
+                    DNS_NAME: `${region}.vpn.${zoneName}`,
+                    DOCUMENT_NAME:
+                        this.openVpnInstanceTerminatingSsmDocument.name ?? '',
                 },
             }
         );
 
         if (this.openVpnInstanceTerminatingFunction.role) {
-            // add policy so that lambda can call lifecycle actions for auto scaling group
-            this.openVpnInstanceTerminatingFunction.role.addToPrincipalPolicy(
-                new iam.PolicyStatement({
-                    resources: [this.openVpnAsg.autoScalingGroupArn],
-                    effect: iam.Effect.ALLOW,
-                    actions: ['autoscaling:CompleteLifecycleAction'],
-                })
-            );
-
-            // add policy so that lambda can interact with acm
+            // add policy so that lambda can interact with ssm
             this.openVpnInstanceTerminatingFunction.role.addToPrincipalPolicy(
                 new iam.PolicyStatement({
                     resources: ['*'],
                     effect: iam.Effect.ALLOW,
-                    actions: ['acm:*'],
+                    actions: ['ssm:*'],
+                })
+            );
+
+            // allow the run command to create logs
+            this.openVpnInstanceTerminatingFunction.role.addToPrincipalPolicy(
+                new iam.PolicyStatement({
+                    resources: ['*'],
+                    effect: iam.Effect.ALLOW,
+                    actions: [
+                        'logs:CreateLogGroup',
+                        'logs:CreateLogStream',
+                        'logs:DescribeLogGroups',
+                        'logs:DescribeLogStreams',
+                        'logs:PutLogEvents',
+                    ],
                 })
             );
         }
@@ -529,22 +607,7 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
             }
         );
 
-        // Ensure that all instances can read from the bucket containing the certs
-        this.openVpnAsg.addToRolePolicy(
-            new iam.PolicyStatement({
-                actions: [
-                    's3:GetObject*',
-                    's3:GetBucket*',
-                    's3:List*',
-                    's3:PutObject*',
-                ],
-                resources: [
-                    `${this.openVpnCertBucket.bucketArn}`,
-                    `${this.openVpnCertBucket.bucketArn}/*`,
-                ],
-                effect: iam.Effect.ALLOW,
-            })
-        );
+        //==========================================================================================================
 
         // create the lambda function to describe instances
         this.processOpenVpnEventFn = new lambda.Function(
@@ -552,6 +615,7 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
             `${id}-ProcessOpenVpnEventFn`,
             {
                 functionName: `${id}-ProcessOpenVpnEventFn`,
+                description: `Lambda to create a record set in Route53 for the public IP of a newly created EC2 instance to the specified FQDN`,
                 code: lambda.Code.fromAsset(path.join(__dirname, '../dist')),
                 handler: 'process-event.handler',
                 timeout: cdk.Duration.seconds(30),
@@ -575,9 +639,6 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
                     actions: [
                         'ec2:DescribeInstances', // Describes one or more of your instances.
                         'ec2:ModifyInstanceAttribute', // Modifies the specified attribute of the specified instance.
-                        // 'ec2:DescribeAddresses', // Describes one or more of your Elastic IP addresses.
-                        // 'ec2:AssociateAddress', // Associates an Elastic IP address with an instance or a network interface.
-                        // 'ec2:DisassociateAddress', // Allow an elastic ip address to be disassociated
                         'route53:ChangeResourceRecordSets', // Allows changes to records in a given hosted zone
                     ],
                 })
@@ -599,6 +660,7 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
                 `${id}-SetOpenVpnAsgToZeroFn`,
                 {
                     functionName: `${id}-SetOpenVpnAsgToZeroFn`,
+                    description: `Lambda function that sets the ASG desired capacity to 0 (triggers a scale in process)`,
                     code: lambda.Code.fromAsset(
                         path.join(__dirname, '../dist')
                     ),
@@ -631,6 +693,7 @@ export class OpenVpnAccessServerInfraStack extends cdk.Stack {
                 `${id}-SetOpenVpnAsgToOneFn`,
                 {
                     functionName: `${id}-SetOpenVpnAsgToOneFn`,
+                    description: `Lambda function that sets the ASG desired capacity to 1 (triggers a scale out process)`,
                     code: lambda.Code.fromAsset(
                         path.join(__dirname, '../dist')
                     ),

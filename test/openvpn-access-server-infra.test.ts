@@ -83,7 +83,7 @@ describe('OpenVpnAccessServerInfraStack', () => {
         stackName: stackId,
         description: `test-description`,
         instanceType: ec2.InstanceType.of(
-            ec2.InstanceClass.T2,
+            ec2.InstanceClass.T3A,
             ec2.InstanceSize.MICRO
         ),
         desiredAsgCapacity: 1,
@@ -414,7 +414,7 @@ describe('OpenVpnAccessServerInfraStack', () => {
                     },
                 }),
             ],
-            InstanceType: 't2.micro',
+            InstanceType: 't3a.micro',
             SecurityGroupIds: [
                 objectLike({
                     'Fn::GetAtt': [piHoleSgLogicalId, 'GroupId'],
@@ -428,21 +428,6 @@ describe('OpenVpnAccessServerInfraStack', () => {
 
         expect(subnetLogicalIds).toContain(ec2Subnet.capturedValue);
     });
-
-    // it('should create an Elastic IP for the OpenVPN EC2 instances', () => {
-    //     const output = new OpenVpnAccessServerInfraStack(
-    //         stack,
-    //         stackId,
-    //         stackProps
-    //     );
-
-    //     const elasticIpLogicalId = output.getLogicalId(output.openVpnElasticIp);
-    //     expect(elasticIpLogicalId).not.toBeUndefined();
-
-    //     expect(output).toHaveResource('AWS::EC2::EIP', {
-    //         Domain: 'vpc',
-    //     });
-    // });
 
     it('should create an Elastic IP for the PiHole EC2 instance', () => {
         const output = new OpenVpnAccessServerInfraStack(
@@ -499,14 +484,14 @@ describe('OpenVpnAccessServerInfraStack', () => {
         });
     });
 
-    it('should create an SNS Topic to publish Auto Scaling Group events for the OpenVPN fleet', () => {
+    it('should create a SNS Topic to publish Auto Scaling Group instance creation/destruction events for the OpenVPN fleet', () => {
         const output = new OpenVpnAccessServerInfraStack(
             stack,
             stackId,
             stackProps
         );
 
-        expect(output).toCountResources('AWS::SNS::Topic', 1);
+        expect(output).toCountResources('AWS::SNS::Topic', 2);
 
         expect(output).toHaveResource('AWS::SNS::Topic', {
             TopicName: `${stackId}-asg-topic-openvpn`,
@@ -532,6 +517,16 @@ describe('OpenVpnAccessServerInfraStack', () => {
         });
     });
 
+    it('should create a SNS Topic to publish Auto Scaling Group lifecycle events for an instance termination event', () => {
+        const output = new OpenVpnAccessServerInfraStack(
+            stack,
+            stackId,
+            stackProps
+        );
+
+        expect(output).toCountResources('AWS::SNS::Topic', 2);
+    });
+
     it('should create an S3 bucket where letsencrypt certs will be stored for reuse after initial generation', () => {
         const output = new OpenVpnAccessServerInfraStack(
             stack,
@@ -543,8 +538,17 @@ describe('OpenVpnAccessServerInfraStack', () => {
             LifecycleConfiguration: {
                 Rules: [
                     {
-                        ExpirationInDays: 30,
+                        ExpirationInDays: 7,
                         Status: 'Enabled',
+                    },
+                ],
+            },
+            BucketEncryption: {
+                ServerSideEncryptionConfiguration: [
+                    {
+                        ServerSideEncryptionByDefault: {
+                            SSEAlgorithm: 'aws:kms',
+                        },
                     },
                 ],
             },
@@ -577,6 +581,7 @@ describe('OpenVpnAccessServerInfraStack', () => {
                             's3:GetBucket*',
                             's3:List*',
                             's3:PutObject*',
+                            'kms:Decrypt',
                         ],
                         Effect: 'Allow',
                         Resource: objectLike([
@@ -657,7 +662,7 @@ describe('OpenVpnAccessServerInfraStack', () => {
         expect(output).toHaveResourceLike(
             'AWS::AutoScaling::LaunchConfiguration',
             {
-                InstanceType: 't2.micro',
+                InstanceType: 't3a.micro',
                 ImageId: stringLike('ami-*'),
                 UserData: anything(),
                 SecurityGroups: [
@@ -675,7 +680,142 @@ describe('OpenVpnAccessServerInfraStack', () => {
         );
     });
 
-    it('should creata a lambda function to process EC2 creation events from the Auto Scaling Group', () => {});
+    it('should creata a lambda function to react to EC2 instance terminating events from the OpenVPN Auto Scaling Group', () => {
+        const output = new OpenVpnAccessServerInfraStack(
+            stack,
+            stackId,
+            stackProps
+        );
+
+        expect(output).toHaveResource('AWS::Lambda::Function', {
+            Code: {
+                S3Bucket: {
+                    Ref: stringLike(`AssetParameters*`),
+                },
+                S3Key: {
+                    'Fn::Join': [
+                        '',
+                        [
+                            {
+                                'Fn::Select': [
+                                    0,
+                                    {
+                                        'Fn::Split': [
+                                            '||',
+                                            {
+                                                Ref: stringLike(
+                                                    'AssetParameters*'
+                                                ),
+                                            },
+                                        ],
+                                    },
+                                ],
+                            },
+                            {
+                                'Fn::Select': [
+                                    1,
+                                    {
+                                        'Fn::Split': [
+                                            '||',
+                                            {
+                                                Ref: stringLike(
+                                                    'AssetParameters*'
+                                                ),
+                                            },
+                                        ],
+                                    },
+                                ],
+                            },
+                        ],
+                    ],
+                },
+            },
+            Role: {
+                'Fn::GetAtt': [stringLike('*'), 'Arn'],
+            },
+            Environment: {
+                Variables: {
+                    REGION: stackProps.env?.region,
+                    BUCKET_NAME: {
+                        Ref: output.getLogicalId(
+                            output.openVpnCertBucket.node
+                                .defaultChild as s3.CfnBucket
+                        ),
+                    },
+                    DNS_NAME: `${stackProps.env?.region}.vpn.foo-bar.com`,
+                    DOCUMENT_NAME:
+                        output.openVpnInstanceTerminatingSsmDocument.name,
+                },
+            },
+            FunctionName: stringLike(`*-OpenVpnInstanceTerminatingHookFn`),
+            Handler: 'instance-terminating.handler',
+            MemorySize: 128,
+            Runtime: 'nodejs14.x',
+            Timeout: 300,
+        });
+    });
+
+    it('should create a lifycycle hook for the OpenVPN Auto Scaling Group to pause and handle OpenSSL certificate backup before the EC2 instance is terminated', () => {
+        const output = new OpenVpnAccessServerInfraStack(
+            stack,
+            stackId,
+            stackProps
+        );
+
+        expect(output).toHaveResource('AWS::AutoScaling::LifecycleHook', {
+            AutoScalingGroupName: {
+                Ref: output.getLogicalId(
+                    output.openVpnAsg.node
+                        .defaultChild as autoscaling.CfnAutoScalingGroup
+                ),
+            },
+            LifecycleTransition: 'autoscaling:EC2_INSTANCE_TERMINATING',
+            DefaultResult: 'CONTINUE',
+            HeartbeatTimeout: 300,
+            LifecycleHookName: 'openvpn-instance-termination-lifecycle-hook',
+            NotificationTargetARN: {
+                Ref: stringLike('*'),
+            },
+            RoleARN: {
+                'Fn::GetAtt': [stringLike('*'), 'Arn'],
+            },
+        });
+    });
+
+    it('should create a SSM Document with the relevant commands to be executed in the EC2 instance that is being terminated by the OpenVPN Auto Scaling Group', () => {
+        const output = new OpenVpnAccessServerInfraStack(
+            stack,
+            stackId,
+            stackProps
+        );
+
+        expect(output).toHaveResource('AWS::SSM::Document', {
+            DocumentType: 'Command',
+            Name: 'OpenVpnInstanceTerminatingDocument',
+            Content: {
+                schemaVersion: '2.2',
+                description: stringLike('*'),
+                parameters: {
+                    domainName: anything(),
+                    region: anything(),
+                    autoScalingGroupName: anything(),
+                    lifecycleHookName: anything(),
+                    lifecycleActionToken: anything(),
+                    bucketName: anything(),
+                },
+                mainSteps: [
+                    {
+                        action: 'aws:runShellScript',
+                        name: 'runShellScript',
+                        inputs: {
+                            timeoutSeconds: '300',
+                            runCommand: anything(),
+                        },
+                    },
+                ],
+            },
+        });
+    });
 
     it('should create a subscription where the ProcessEvent lambda listen in to Auto Scaling Group events', () => {
         const output = new OpenVpnAccessServerInfraStack(
